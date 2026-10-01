@@ -5,17 +5,21 @@ import (
 	"log"
 	"net"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"kyc-platform/services/verification-service/internal/cache"
 	"kyc-platform/services/verification-service/internal/grpcapi"
 	"kyc-platform/services/verification-service/internal/orchestrator"
+	"kyc-platform/services/verification-service/internal/publisher"
 	"kyc-platform/services/verification-service/internal/repository"
 	"kyc-platform/services/verification-service/internal/service"
 	"kyc-platform/services/verification-service/internal/source"
+	"kyc-platform/shared/contracts"
 	"kyc-platform/shared/db"
 	"kyc-platform/shared/env"
+	"kyc-platform/shared/events"
 
 	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
@@ -39,6 +43,7 @@ func main() {
 		breakerFailures = env.GetInt("BREAKER_FAILURE_THRESHOLD", 5)
 		breakerOpenFor  = env.GetDuration("BREAKER_OPEN_TIMEOUT", 30*time.Second)
 		cacheTTL        = env.GetDuration("CACHE_TTL", 24*time.Hour)
+		kafkaBrokers    = strings.Split(env.GetString("KAFKA_BROKERS", "localhost:9094"), ",")
 	)
 
 	if piiSecret == "" {
@@ -66,8 +71,15 @@ func main() {
 		source.NewHTTPSource("source-b", sourceBURL, sourceTimeout),
 	}, breakerFailures, breakerOpenFor)
 
+	// Events
+	if err := events.EnsureTopics(kafkaBrokers, 3, contracts.TopicVerificationCompleted); err != nil {
+		log.Printf("ensure kafka topics: %v", err)
+	}
+	producer := events.NewProducer(kafkaBrokers)
+	defer producer.Close()
+
 	// Wire everything together: this is our dependency injection.
-	svc := service.New(repo, cache.NewRedisCache(redisClient, cacheTTL), orch, piiSecret)
+	svc := service.New(repo, cache.NewRedisCache(redisClient, cacheTTL), orch, publisher.NewKafkaPublisher(producer), piiSecret)
 
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {

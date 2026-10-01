@@ -46,8 +46,26 @@ func (c *mapCache) Set(ctx context.Context, key string, v domain.CachedLookup) e
 	return nil
 }
 
+type fakePublisher struct {
+	mu        sync.Mutex
+	published []*domain.Verification
+}
+
+func (p *fakePublisher) PublishVerificationCompleted(ctx context.Context, v *domain.Verification) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.published = append(p.published, v)
+	return nil
+}
+
 func newTestService(l *fakeLookup) *Service {
-	return New(repository.NewInmemRepository(), newMapCache(), l, "test-secret")
+	s, _ := newTestServiceWithEvents(l)
+	return s
+}
+
+func newTestServiceWithEvents(l *fakeLookup) (*Service, *fakePublisher) {
+	pub := &fakePublisher{}
+	return New(repository.NewInmemRepository(), newMapCache(), l, pub, "test-secret"), pub
 }
 
 var ctx = context.Background()
@@ -107,5 +125,20 @@ func TestClientsCannotReadEachOthersRecords(t *testing.T) {
 	v, _ := s.VerifyPAN(ctx, VerifyRequest{ClientID: "c1", PAN: "ABCDE1234F"})
 	if _, err := s.GetVerification(ctx, "c2", v.ID); !errors.Is(err, domain.ErrNotFound) {
 		t.Error("client c2 must not see client c1's verification")
+	}
+}
+
+func TestPublishesOnceEvenWhenClientRetries(t *testing.T) {
+	l := &fakeLookup{res: orchestrator.Result{Exists: true, Source: "source-a"}}
+	s, pub := newTestServiceWithEvents(l)
+	req := VerifyRequest{ClientID: "c1", PAN: "ABCDE1234F", ReferenceID: "ref-1"}
+
+	s.VerifyPAN(ctx, req)
+	s.VerifyPAN(ctx, req)
+	if len(pub.published) != 1 {
+		t.Errorf("published %d events, want 1: a retry must not trigger a second webhook", len(pub.published))
+	}
+	if pub.published[0].PANMasked != "AB******4F" {
+		t.Error("event must carry only the masked PAN")
 	}
 }

@@ -23,8 +23,8 @@ type Producer struct {
 func NewProducer(brokers []string) *Producer {
 	return &Producer{writer: &kafka.Writer{
 		Addr:         kafka.TCP(brokers...),
-		Balancer:     &kafka.Hash{},     // same key, same partition
-		RequiredAcks: kafka.RequireAll,  // wait until all replicas have it
+		Balancer:     &kafka.Hash{},    // same key, same partition
+		RequiredAcks: kafka.RequireAll, // wait until all replicas have it
 		BatchTimeout: 10 * time.Millisecond,
 	}}
 }

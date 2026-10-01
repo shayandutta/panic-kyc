@@ -24,6 +24,11 @@ type Lookup interface {
 	LookupPAN(ctx context.Context, pan string) (orchestrator.Result, error)
 }
 
+// EventPublisher announces finished verifications to other services.
+type EventPublisher interface {
+	PublishVerificationCompleted(ctx context.Context, v *domain.Verification) error
+}
+
 type VerifyRequest struct {
 	ClientID    string
 	PAN         string
@@ -35,12 +40,13 @@ type Service struct {
 	repo      domain.Repository
 	cache     domain.Cache
 	lookup    Lookup
+	events    EventPublisher
 	piiSecret string
 	now       func() time.Time
 }
 
-func New(repo domain.Repository, cache domain.Cache, lookup Lookup, piiSecret string) *Service {
-	return &Service{repo: repo, cache: cache, lookup: lookup, piiSecret: piiSecret, now: time.Now}
+func New(repo domain.Repository, cache domain.Cache, lookup Lookup, events EventPublisher, piiSecret string) *Service {
+	return &Service{repo: repo, cache: cache, lookup: lookup, events: events, piiSecret: piiSecret, now: time.Now}
 }
 
 // VerifyPAN runs one verification:
@@ -49,6 +55,7 @@ func New(repo domain.Repository, cache domain.Cache, lookup Lookup, piiSecret st
 //  3. cache: recent answer for this PAN skips the upstream call
 //  4. upstream lookup with fallback
 //  5. save the audit record
+//  6. publish a verification.completed event
 func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Verification, error) {
 	pan := pii.NormalizePAN(req.PAN)
 	if !pii.IsValidPAN(pan) {
@@ -95,6 +102,13 @@ func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Ver
 			return s.repo.GetByReference(ctx, req.ClientID, req.ReferenceID)
 		}
 		return nil, err
+	}
+
+	// Known gap: saving and publishing are two separate writes. If the
+	// publish fails, the record exists without an event. The fix is the
+	// transactional outbox pattern; for now we log loudly so it can be replayed.
+	if err := s.events.PublishVerificationCompleted(ctx, v); err != nil {
+		log.Printf("verification %s saved but event publish failed: %v", v.ID, err)
 	}
 
 	return v, nil
