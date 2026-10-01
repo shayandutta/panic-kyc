@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: bulk-service }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: bulk-service } }
+  template:
+    metadata: { labels: { app: bulk-service } }
+    spec:
+      terminationGracePeriodSeconds: 30 # time for graceful shutdown after SIGTERM
+      containers:
+        - name: bulk-service
+          image: kyc/bulk-service
+          envFrom:
+            - configMapRef: { name: kyc-config }
+          ports: [{ containerPort: 9095 }]
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          readinessProbe: { tcpSocket: { port: 9095 }, periodSeconds: 5 }
+          livenessProbe: { tcpSocket: { port: 9095 }, periodSeconds: 10, failureThreshold: 3 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: bulk-service }
+spec:
+  selector: { app: bulk-service }
+  ports: [{ port: 9095 }]

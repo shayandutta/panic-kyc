@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api-gateway }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: api-gateway } }
+  template:
+    metadata: { labels: { app: api-gateway } }
+    spec:
+      terminationGracePeriodSeconds: 30 # time for graceful shutdown after SIGTERM
+      containers:
+        - name: api-gateway
+          image: kyc/api-gateway
+          envFrom:
+            - configMapRef: { name: kyc-config }
+          ports: [{ containerPort: 8080 }]
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          readinessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10, failureThreshold: 3 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-gateway }
+spec:
+  selector: { app: api-gateway }
+  ports: [{ port: 8080 }]
+---
+# Adds gateway pods when average CPU passes 70% (needs metrics-server).
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: api-gateway }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: api-gateway }
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }

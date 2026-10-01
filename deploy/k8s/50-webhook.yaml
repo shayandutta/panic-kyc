@@ -1,0 +1,19 @@
+# Scales by replicas: each pod joins the same consumer group, up to the partition count.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: webhook-service }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: webhook-service } }
+  template:
+    metadata: { labels: { app: webhook-service } }
+    spec:
+      terminationGracePeriodSeconds: 30 # time for graceful shutdown after SIGTERM
+      containers:
+        - name: webhook-service
+          image: kyc/webhook-service
+          envFrom:
+            - configMapRef: { name: kyc-config }
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }
+            limits: { memory: 128Mi }

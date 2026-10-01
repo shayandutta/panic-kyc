@@ -1,0 +1,107 @@
+# Dev-only infrastructure: single replicas, no persistent volumes.
+# Production would use managed services (RDS/Cloud SQL, MSK/Confluent,
+# ElastiCache, Atlas) or operators with StatefulSets and volumes.
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: postgres }
+spec:
+  selector: { matchLabels: { app: postgres } }
+  template:
+    metadata: { labels: { app: postgres } }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - { name: POSTGRES_USER, value: kyc }
+            - { name: POSTGRES_PASSWORD, value: kyc }
+            - { name: POSTGRES_DB, value: verification }
+          ports: [{ containerPort: 5432 }]
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "kyc", "-d", "verification"] }
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata: { name: postgres }
+spec:
+  selector: { app: postgres }
+  ports: [{ port: 5432 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: mongo }
+spec:
+  selector: { matchLabels: { app: mongo } }
+  template:
+    metadata: { labels: { app: mongo } }
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:7
+          ports: [{ containerPort: 27017 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: mongo }
+spec:
+  selector: { app: mongo }
+  ports: [{ port: 27017 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: redis }
+spec:
+  selector: { matchLabels: { app: redis } }
+  template:
+    metadata: { labels: { app: redis } }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports: [{ containerPort: 6379 }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: redis }
+spec:
+  selector: { app: redis }
+  ports: [{ port: 6379 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: kafka }
+spec:
+  selector: { matchLabels: { app: kafka } }
+  template:
+    metadata: { labels: { app: kafka } }
+    spec:
+      enableServiceLinks: false # otherwise k8s injects KAFKA_PORT, which confuses the broker
+      containers:
+        - name: kafka
+          image: apache/kafka:3.8.0
+          ports: [{ containerPort: 9092 }]
+          env:
+            - { name: KAFKA_NODE_ID, value: "1" }
+            - { name: KAFKA_PROCESS_ROLES, value: "broker,controller" }
+            - { name: KAFKA_LISTENERS, value: "PLAINTEXT://:9092,CONTROLLER://:9093" }
+            - { name: KAFKA_ADVERTISED_LISTENERS, value: "PLAINTEXT://kafka:9092" }
+            - { name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP, value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT" }
+            - { name: KAFKA_CONTROLLER_QUORUM_VOTERS, value: "1@localhost:9093" }
+            - { name: KAFKA_CONTROLLER_LISTENER_NAMES, value: "CONTROLLER" }
+            - { name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR, value: "1" }
+            - { name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR, value: "1" }
+            - { name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1" }
+            - { name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS, value: "0" }
+            - { name: KAFKA_NUM_PARTITIONS, value: "3" }
+            - { name: KAFKA_HEAP_OPTS, value: "-Xmx512m -Xms512m" }
+          readinessProbe:
+            tcpSocket: { port: 9092 }
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata: { name: kafka }
+spec:
+  selector: { app: kafka }
+  ports: [{ port: 9092 }]

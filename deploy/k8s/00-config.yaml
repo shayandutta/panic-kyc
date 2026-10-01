@@ -1,0 +1,24 @@
+# Local/dev configuration. In production, secrets come from a secrets
+# manager (e.g. External Secrets + a cloud KMS), never from git.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kyc-config
+data:
+  KAFKA_BROKERS: kafka:9092
+  REDIS_ADDR: redis:6379
+  POSTGRES_URL: postgres://kyc:kyc@postgres:5432/verification?sslmode=disable
+  MONGODB_URI: mongodb://mongo:27017
+  VERIFICATION_SERVICE_ADDR: verification-service:9093
+  BULK_SERVICE_ADDR: bulk-service:9095
+  SOURCE_A_URL: http://sandbox:8090/sources/source-a/pan
+  SOURCE_B_URL: http://sandbox:8090/sources/source-b/pan
+  WEBHOOKS_FILE: deploy/docker/webhooks.json
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kyc-secrets
+type: Opaque
+stringData:
+  PII_SECRET: dev-only-pii-secret-change-me
