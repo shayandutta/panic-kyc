@@ -1,6 +1,7 @@
 // Sandbox fakes the outside world for local development:
-// upstream PAN data sources (stand-ins for providers like NSDL or DigiLocker)
-// whose latency and failure rate can be changed at runtime.
+//   - upstream PAN data sources (stand-ins for providers like NSDL or DigiLocker)
+//     whose latency and failure rate can be changed at runtime
+//   - client servers that receive our webhooks (see receiver.go)
 package main
 
 import (
@@ -132,6 +133,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /sources/{name}/pan", handleLookup)
 	mux.HandleFunc("PUT /admin/sources/{name}", handleConfigure)
+	mux.HandleFunc("POST /client-webhooks/{client}", handleClientWebhook)
+	mux.HandleFunc("GET /client-webhooks/{client}", handleListReceived)
+	mux.HandleFunc("PUT /admin/client-webhooks/{client}", handleClientWebhookConfig)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
