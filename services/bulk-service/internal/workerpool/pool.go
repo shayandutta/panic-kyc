@@ -30,6 +30,18 @@ func New[T any](size, queueSize int, handle func(T)) *Pool[T] {
 
 func (p *Pool[T]) Submit(item T) { p.jobs <- item }
 
+// SubmitOrStop is Submit that gives up when stop is closed, so a producer
+// blocked on a full queue can exit during shutdown. It reports whether the
+// item was queued.
+func (p *Pool[T]) SubmitOrStop(item T, stop <-chan struct{}) bool {
+	select {
+	case p.jobs <- item:
+		return true
+	case <-stop:
+		return false
+	}
+}
+
 func (p *Pool[T]) Size() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -92,6 +104,8 @@ func (p *Pool[T]) Autoscale(min, max int, tick time.Duration, stop <-chan struct
 }
 
 // Close stops accepting work and waits for queued items to finish.
+// Every producer must have stopped calling Submit first: sending on a
+// closed channel panics.
 func (p *Pool[T]) Close() {
 	close(p.jobs)
 	p.wg.Wait()
