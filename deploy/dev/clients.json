@@ -1,0 +1,14 @@
+[
+  {
+    "client_id": "bank-1",
+    "key_sha256": "e033c176e69416343ba4def72a4e5a1509ab6815b858dc31572ab74fe6ae67d4",
+    "rate_per_second": 5,
+    "burst": 10
+  },
+  {
+    "client_id": "lender-2",
+    "key_sha256": "dc90d35bbb631a579e35f999058dda6530c3e8b3a8a63aa4356636ba06cdfc69",
+    "rate_per_second": 20,
+    "burst": 40
+  }
+]
