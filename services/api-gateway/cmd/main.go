@@ -13,6 +13,7 @@ import (
 	"kyc-platform/services/api-gateway/internal/httpapi"
 	"kyc-platform/services/api-gateway/internal/ratelimit"
 	"kyc-platform/shared/env"
+	bulkpb "kyc-platform/shared/proto/bulk"
 	pb "kyc-platform/shared/proto/verification"
 
 	"github.com/redis/go-redis/v9"
@@ -29,6 +30,7 @@ func main() {
 		clientsFile     = env.GetString("CLIENTS_FILE", "deploy/dev/clients.json")
 		redisAddr       = env.GetString("REDIS_ADDR", "localhost:6379")
 		verificationURL = env.GetString("VERIFICATION_SERVICE_ADDR", "localhost:9093")
+		bulkURL         = env.GetString("BULK_SERVICE_ADDR", "localhost:9095")
 	)
 
 	keys, err := auth.LoadKeyStore(clientsFile)
@@ -47,12 +49,19 @@ func main() {
 	}
 	defer verificationConn.Close()
 
+	bulkConn, err := grpc.NewClient(bulkURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("create bulk client: %v", err)
+	}
+	defer bulkConn.Close()
+
 	server := &http.Server{
 		Addr: addr,
 		Handler: httpapi.NewRouter(httpapi.Deps{
 			Keys:          keys,
 			Limiter:       ratelimit.New(redisClient),
 			Verifications: pb.NewVerificationServiceClient(verificationConn),
+			Bulk:          bulkpb.NewBulkServiceClient(bulkConn),
 		}),
 		ReadHeaderTimeout: 5 * time.Second, // slow-header clients can't hold connections forever
 	}
