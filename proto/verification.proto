@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package verification;
+
+option go_package = "kyc-platform/shared/proto/verification;verificationpb";
+
+service VerificationService {
+  // Verifies a PAN against upstream sources, with fallback between sources.
+  rpc VerifyPAN(VerifyPANRequest) returns (Verification);
+  rpc GetVerification(GetVerificationRequest) returns (Verification);
+}
+
+enum VerificationStatus {
+  VERIFICATION_STATUS_UNSPECIFIED = 0;
+  VERIFICATION_STATUS_VALID = 1;              // PAN exists
+  VERIFICATION_STATUS_INVALID = 2;            // PAN does not exist
+  VERIFICATION_STATUS_SOURCE_UNAVAILABLE = 3; // every source failed
+}
+
+message VerifyPANRequest {
+  string client_id = 1;
+  string pan = 2;
+  string name = 3;
+  // Client-supplied idempotency key. Same key returns the same result.
+  string reference_id = 4;
+}
+
+message GetVerificationRequest {
+  string client_id = 1;
+  string id = 2;
+}
+
+message Verification {
+  string id = 1;
+  string client_id = 2;
+  string reference_id = 3;
+  string pan_masked = 4;
+  VerificationStatus status = 5;
+  bool name_match = 6;
+  string source = 7;
+  string created_at = 8;
+}
