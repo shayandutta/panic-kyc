@@ -29,7 +29,7 @@ func main() {
 
 	var (
 		grpcAddr        = env.GetString("GRPC_ADDR", ":9093")
-		mongoURI        = env.GetString("MONGODB_URI", "mongodb://localhost:27017")
+		mongoURI        = env.GetString("MONGODB_URI", "mongodb://localhost:27018")
 		mongoDB         = env.GetString("MONGODB_DATABASE", "kyc")
 		redisAddr       = env.GetString("REDIS_ADDR", "localhost:6379")
 		piiSecret       = env.GetString("PII_SECRET", "")
