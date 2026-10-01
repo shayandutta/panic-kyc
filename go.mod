@@ -6,6 +6,7 @@ require (
 	github.com/alicebob/miniredis/v2 v2.33.0
 	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.7.3
+	github.com/segmentio/kafka-go v0.4.47
 	go.mongodb.org/mongo-driver v1.17.4
 	google.golang.org/grpc v1.69.4
 	google.golang.org/protobuf v1.36.6
@@ -18,6 +19,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
+	github.com/pierrec/lz4/v4 v4.1.15 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
