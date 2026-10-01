@@ -12,6 +12,7 @@ import (
 	"kyc-platform/services/verification-service/internal/cache"
 	"kyc-platform/services/verification-service/internal/grpcapi"
 	"kyc-platform/services/verification-service/internal/orchestrator"
+	"kyc-platform/services/verification-service/internal/outbox"
 	"kyc-platform/services/verification-service/internal/repository"
 	"kyc-platform/services/verification-service/internal/service"
 	"kyc-platform/services/verification-service/internal/source"
@@ -76,6 +77,14 @@ func main() {
 	producer := events.NewProducer(kafkaBrokers)
 	defer producer.Close()
 
+	// The relay moves events from the outbox table to Kafka.
+	relay := outbox.NewRelay(pgPool, producer, 100, 200*time.Millisecond)
+	relayDone := make(chan struct{})
+	go func() {
+		defer close(relayDone)
+		relay.Run(ctx)
+	}()
+
 	// Wire everything together: this is our dependency injection.
 	svc := service.New(repo, cache.NewRedisCache(redisClient, cacheTTL), orch, piiSecret)
 
@@ -99,4 +108,5 @@ func main() {
 	<-ctx.Done()
 	log.Println("shutting down verification service")
 	server.GracefulStop() // finish in-flight calls, refuse new ones
+	<-relayDone           // let the relay finish its current batch
 }

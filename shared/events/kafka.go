@@ -37,6 +37,23 @@ func (p *Producer) Publish(ctx context.Context, topic, key string, event any) er
 	return p.writer.WriteMessages(ctx, kafka.Message{Topic: topic, Key: []byte(key), Value: value})
 }
 
+// RawMessage is an already-encoded event, e.g. read from an outbox table.
+type RawMessage struct {
+	Topic string
+	Key   string
+	Value []byte
+}
+
+// PublishRaw writes several pre-encoded messages in one batch. Messages
+// for the same partition keep their order.
+func (p *Producer) PublishRaw(ctx context.Context, msgs ...RawMessage) error {
+	out := make([]kafka.Message, len(msgs))
+	for i, m := range msgs {
+		out[i] = kafka.Message{Topic: m.Topic, Key: []byte(m.Key), Value: m.Value}
+	}
+	return p.writer.WriteMessages(ctx, out...)
+}
+
 func (p *Producer) Close() error { return p.writer.Close() }
 
 // Handler processes one message. Return an error only for failures worth
