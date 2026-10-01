@@ -27,7 +27,7 @@ func main() {
 	var (
 		grpcAddr        = env.GetString("GRPC_ADDR", ":9095")
 		mongoURI        = env.GetString("MONGODB_URI", "mongodb://localhost:27018")
-		mongoDB         = env.GetString("MONGODB_DATABASE", "kyc")
+		mongoDB         = env.GetString("MONGODB_DATABASE", "bulk")
 		verificationURL = env.GetString("VERIFICATION_SERVICE_ADDR", "localhost:9093")
 		cfg             = processor.Config{
 			MinWorkers:  env.GetInt("BULK_MIN_WORKERS", 2),

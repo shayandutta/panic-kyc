@@ -34,7 +34,7 @@ func main() {
 	var (
 		grpcAddr        = env.GetString("GRPC_ADDR", ":9093")
 		mongoURI        = env.GetString("MONGODB_URI", "mongodb://localhost:27018")
-		mongoDB         = env.GetString("MONGODB_DATABASE", "kyc")
+		mongoDB         = env.GetString("MONGODB_DATABASE", "verification")
 		redisAddr       = env.GetString("REDIS_ADDR", "localhost:6379")
 		piiSecret       = env.GetString("PII_SECRET", "")
 		sourceAURL      = env.GetString("SOURCE_A_URL", "http://localhost:8090/sources/source-a/pan")
