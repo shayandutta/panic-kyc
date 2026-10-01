@@ -55,6 +55,8 @@ func toStatus(err error) error {
 	switch {
 	case errors.Is(err, service.ErrInvalidPAN):
 		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.Is(err, service.ErrReferenceConflict):
+		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, domain.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, service.ErrSourceUnavailable):

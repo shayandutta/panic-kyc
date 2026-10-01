@@ -103,6 +103,8 @@ func writeGRPCError(w http.ResponseWriter, err error) {
 	switch st.Code() {
 	case codes.InvalidArgument:
 		writeError(w, http.StatusBadRequest, contracts.ErrCodeInvalidPAN, st.Message())
+	case codes.AlreadyExists:
+		writeError(w, http.StatusConflict, contracts.ErrCodeReferenceConflict, st.Message())
 	case codes.NotFound:
 		writeError(w, http.StatusNotFound, contracts.ErrCodeNotFound, "verification not found")
 	case codes.Unavailable:

@@ -142,3 +142,14 @@ func TestPublishesOnceEvenWhenClientRetries(t *testing.T) {
 		t.Error("event must carry only the masked PAN")
 	}
 }
+
+func TestReusedReferenceForDifferentPANIsRejected(t *testing.T) {
+	l := &fakeLookup{res: orchestrator.Result{Exists: true, Source: "source-a"}}
+	s := newTestService(l)
+
+	s.VerifyPAN(ctx, VerifyRequest{ClientID: "c1", PAN: "ABCDE1234F", ReferenceID: "ref-1"})
+	_, err := s.VerifyPAN(ctx, VerifyRequest{ClientID: "c1", PAN: "PQRST6789K", ReferenceID: "ref-1"})
+	if !errors.Is(err, ErrReferenceConflict) {
+		t.Errorf("err = %v, want ErrReferenceConflict", err)
+	}
+}

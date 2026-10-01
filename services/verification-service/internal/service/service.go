@@ -17,6 +17,10 @@ import (
 var (
 	ErrInvalidPAN        = errors.New("invalid PAN format")
 	ErrSourceUnavailable = errors.New("no upstream source could answer")
+	// ErrReferenceConflict means the client reused a reference ID for a
+	// different PAN. Returning the old result would silently answer the
+	// wrong question, so we refuse instead.
+	ErrReferenceConflict = errors.New("reference_id was already used for a different PAN")
 )
 
 // Lookup asks upstream sources about a PAN. The orchestrator implements it.
@@ -62,17 +66,17 @@ func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Ver
 		return nil, ErrInvalidPAN
 	}
 
+	panFingerprint := pii.Fingerprint(pan, s.piiSecret)
+
 	if req.ReferenceID != "" {
 		existing, err := s.repo.GetByReference(ctx, req.ClientID, req.ReferenceID)
 		if err == nil {
-			return existing, nil
+			return sameRequestOrConflict(existing, panFingerprint)
 		}
 		if !errors.Is(err, domain.ErrNotFound) {
 			return nil, err
 		}
 	}
-
-	panFingerprint := pii.Fingerprint(pan, s.piiSecret)
 
 	lookup, err := s.lookupPAN(ctx, pan, panFingerprint)
 	if err != nil {
@@ -99,7 +103,11 @@ func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Ver
 		// Two requests with the same reference ID raced; the other one won.
 		// Return its result so both callers see the same answer.
 		if errors.Is(err, domain.ErrDuplicateReference) {
-			return s.repo.GetByReference(ctx, req.ClientID, req.ReferenceID)
+			existing, err := s.repo.GetByReference(ctx, req.ClientID, req.ReferenceID)
+			if err != nil {
+				return nil, err
+			}
+			return sameRequestOrConflict(existing, panFingerprint)
 		}
 		return nil, err
 	}
@@ -112,6 +120,15 @@ func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Ver
 	}
 
 	return v, nil
+}
+
+// sameRequestOrConflict returns the stored result for a retried request, or
+// ErrReferenceConflict if the reference ID was used for another PAN.
+func sameRequestOrConflict(existing *domain.Verification, panFingerprint string) (*domain.Verification, error) {
+	if existing.PANFingerprint != panFingerprint {
+		return nil, ErrReferenceConflict
+	}
+	return existing, nil
 }
 
 func (s *Service) GetVerification(ctx context.Context, clientID, id string) (*domain.Verification, error) {

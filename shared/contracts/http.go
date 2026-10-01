@@ -19,6 +19,7 @@ const (
 	ErrCodeUnauthorized      = "unauthorized"
 	ErrCodeRateLimited       = "rate_limited"
 	ErrCodeNotFound          = "not_found"
+	ErrCodeReferenceConflict = "reference_conflict"
 	ErrCodeSourceUnavailable = "source_unavailable"
 	ErrCodeInternal          = "internal_error"
 )
