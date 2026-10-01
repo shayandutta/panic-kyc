@@ -18,3 +18,11 @@ test:
 
 vet:
 	go vet ./...
+
+.PHONY: test-race test-integration
+
+test-race:
+	go test -race ./...
+
+test-integration:
+	TEST_POSTGRES_URL='postgres://kyc:kyc@localhost:5433/verification?sslmode=disable' go test -race -count=1 ./...
