@@ -33,8 +33,7 @@ func main() {
 
 	var (
 		grpcAddr        = env.GetString("GRPC_ADDR", ":9093")
-		mongoURI        = env.GetString("MONGODB_URI", "mongodb://localhost:27018")
-		mongoDB         = env.GetString("MONGODB_DATABASE", "verification")
+		postgresURL     = env.GetString("POSTGRES_URL", "postgres://kyc:kyc@localhost:5433/verification?sslmode=disable")
 		redisAddr       = env.GetString("REDIS_ADDR", "localhost:6379")
 		piiSecret       = env.GetString("PII_SECRET", "")
 		sourceAURL      = env.GetString("SOURCE_A_URL", "http://localhost:8090/sources/source-a/pan")
@@ -51,14 +50,14 @@ func main() {
 	}
 
 	// Storage
-	mongoClient, err := db.ConnectMongo(ctx, mongoURI)
+	pgPool, err := db.ConnectPostgres(ctx, postgresURL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer mongoClient.Disconnect(context.Background())
+	defer pgPool.Close()
 
-	repo, err := repository.NewMongoRepository(ctx, mongoClient.Database(mongoDB))
-	if err != nil {
+	repo := repository.NewPostgresRepository(pgPool)
+	if err := repo.Migrate(ctx); err != nil {
 		log.Fatal(err)
 	}
 

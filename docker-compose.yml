@@ -6,6 +6,17 @@ services:
     volumes:
       - mongo-data:/data/db
 
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432" # 5433 on the host, in case a local postgres already uses 5432
+    environment:
+      POSTGRES_USER: kyc
+      POSTGRES_PASSWORD: kyc
+      POSTGRES_DB: verification
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
   redis:
     image: redis:7-alpine
     ports:
@@ -34,3 +45,4 @@ services:
 
 volumes:
   mongo-data:
+  postgres-data:
