@@ -1,0 +1,12 @@
+[
+  {
+    "client_id": "bank-1",
+    "url": "http://sandbox:8090/client-webhooks/bank-1",
+    "secret": "whsec_bank1_demo"
+  },
+  {
+    "client_id": "lender-2",
+    "url": "http://sandbox:8090/client-webhooks/lender-2",
+    "secret": "whsec_lender2_demo"
+  }
+]

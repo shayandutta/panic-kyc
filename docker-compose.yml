@@ -1,3 +1,10 @@
+# Infrastructure only:   docker compose up -d
+# Whole platform:        docker compose --profile apps up -d --build
+
+x-app: &app
+  profiles: ["apps"]
+  restart: on-failure # services exit if a dependency isn't up yet; retry
+
 services:
   mongo:
     image: mongo:7
@@ -14,6 +21,10 @@ services:
       POSTGRES_USER: kyc
       POSTGRES_PASSWORD: kyc
       POSTGRES_DB: verification
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kyc -d verification"]
+      interval: 3s
+      retries: 20
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
@@ -42,6 +53,59 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
       KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 5s
+      retries: 30
+
+  # ---------------- application services ----------------
+
+  sandbox:
+    <<: *app
+    build: { context: ., args: { SERVICE_PATH: services/sandbox } }
+    ports: ["8090:8090"]
+
+  verification-service:
+    <<: *app
+    build: { context: ., args: { SERVICE_PATH: services/verification-service/cmd } }
+    environment:
+      POSTGRES_URL: postgres://kyc:kyc@postgres:5432/verification?sslmode=disable
+      REDIS_ADDR: redis:6379
+      KAFKA_BROKERS: kafka:9092
+      PII_SECRET: dev-only-pii-secret-change-me
+      SOURCE_A_URL: http://sandbox:8090/sources/source-a/pan
+      SOURCE_B_URL: http://sandbox:8090/sources/source-b/pan
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  bulk-service:
+    <<: *app
+    build: { context: ., args: { SERVICE_PATH: services/bulk-service/cmd } }
+    environment:
+      MONGODB_URI: mongodb://mongo:27017
+      VERIFICATION_SERVICE_ADDR: verification-service:9093
+    depends_on: [mongo, verification-service]
+
+  webhook-service:
+    <<: *app
+    build: { context: ., args: { SERVICE_PATH: services/webhook-service/cmd } }
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      WEBHOOKS_FILE: deploy/docker/webhooks.json
+    depends_on:
+      kafka: { condition: service_healthy }
+
+  api-gateway:
+    <<: *app
+    build: { context: ., args: { SERVICE_PATH: services/api-gateway/cmd } }
+    ports: ["8080:8080"]
+    environment:
+      REDIS_ADDR: redis:6379
+      VERIFICATION_SERVICE_ADDR: verification-service:9093
+      BULK_SERVICE_ADDR: bulk-service:9095
+    depends_on: [redis, verification-service, bulk-service]
 
 volumes:
   mongo-data:
