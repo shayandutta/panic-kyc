@@ -3,12 +3,14 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
 
 	"kyc-platform/services/verification-service/internal/domain"
 	"kyc-platform/services/verification-service/internal/orchestrator"
+	"kyc-platform/shared/contracts"
 	"kyc-platform/shared/pii"
 
 	"github.com/google/uuid"
@@ -28,11 +30,6 @@ type Lookup interface {
 	LookupPAN(ctx context.Context, pan string) (orchestrator.Result, error)
 }
 
-// EventPublisher announces finished verifications to other services.
-type EventPublisher interface {
-	PublishVerificationCompleted(ctx context.Context, v *domain.Verification) error
-}
-
 type VerifyRequest struct {
 	ClientID    string
 	PAN         string
@@ -44,13 +41,12 @@ type Service struct {
 	repo      domain.Repository
 	cache     domain.Cache
 	lookup    Lookup
-	events    EventPublisher
 	piiSecret string
 	now       func() time.Time
 }
 
-func New(repo domain.Repository, cache domain.Cache, lookup Lookup, events EventPublisher, piiSecret string) *Service {
-	return &Service{repo: repo, cache: cache, lookup: lookup, events: events, piiSecret: piiSecret, now: time.Now}
+func New(repo domain.Repository, cache domain.Cache, lookup Lookup, piiSecret string) *Service {
+	return &Service{repo: repo, cache: cache, lookup: lookup, piiSecret: piiSecret, now: time.Now}
 }
 
 // VerifyPAN runs one verification:
@@ -58,8 +54,8 @@ func New(repo domain.Repository, cache domain.Cache, lookup Lookup, events Event
 //  2. idempotency: same client + reference ID returns the stored result
 //  3. cache: recent answer for this PAN skips the upstream call
 //  4. upstream lookup with fallback
-//  5. save the audit record
-//  6. publish a verification.completed event
+//  5. save the audit record and its verification.completed event together
+//     (transactional outbox; a relay publishes the event to Kafka)
 func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Verification, error) {
 	pan := pii.NormalizePAN(req.PAN)
 	if !pii.IsValidPAN(pan) {
@@ -99,7 +95,12 @@ func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Ver
 			pii.Fingerprint(domain.NormalizeName(req.Name), s.piiSecret) == lookup.NameFingerprint
 	}
 
-	if err := s.repo.Save(ctx, v); err != nil {
+	event, err := completedEvent(v)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.repo.Save(ctx, v, event); err != nil {
 		// Two requests with the same reference ID raced; the other one won.
 		// Return its result so both callers see the same answer.
 		if errors.Is(err, domain.ErrDuplicateReference) {
@@ -112,14 +113,29 @@ func (s *Service) VerifyPAN(ctx context.Context, req VerifyRequest) (*domain.Ver
 		return nil, err
 	}
 
-	// Known gap: saving and publishing are two separate writes. If the
-	// publish fails, the record exists without an event. The fix is the
-	// transactional outbox pattern; for now we log loudly so it can be replayed.
-	if err := s.events.PublishVerificationCompleted(ctx, v); err != nil {
-		log.Printf("verification %s saved but event publish failed: %v", v.ID, err)
-	}
-
 	return v, nil
+}
+
+// completedEvent builds the event other services react to. It carries only
+// masked data, because Kafka keeps messages and copies them to every consumer.
+// The verification ID doubles as the event ID, so consumers can deduplicate.
+func completedEvent(v *domain.Verification) (domain.OutboxMessage, error) {
+	payload, err := json.Marshal(contracts.VerificationCompletedEvent{
+		EventID:        v.ID,
+		ClientID:       v.ClientID,
+		VerificationID: v.ID,
+		ReferenceID:    v.ReferenceID,
+		PANMasked:      v.PANMasked,
+		Status:         string(v.Status),
+		NameMatch:      v.NameMatch,
+		Source:         v.Source,
+		OccurredAt:     v.CreatedAt,
+	})
+	if err != nil {
+		return domain.OutboxMessage{}, err
+	}
+	// Keyed by client, so each client's events stay in order in Kafka.
+	return domain.OutboxMessage{Topic: contracts.TopicVerificationCompleted, Key: v.ClientID, Payload: payload}, nil
 }
 
 // sameRequestOrConflict returns the stored result for a retried request, or

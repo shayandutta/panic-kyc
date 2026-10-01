@@ -32,6 +32,8 @@ func newTestPostgres(t *testing.T) *PostgresRepository {
 	return r
 }
 
+var testEvent = domain.OutboxMessage{Topic: "verification.completed", Key: "c", Payload: []byte(`{"test":true}`)}
+
 func record(clientID, ref string) *domain.Verification {
 	return &domain.Verification{
 		ID: uuid.NewString(), ClientID: clientID, ReferenceID: ref,
@@ -45,7 +47,7 @@ func TestPostgresSaveAndRead(t *testing.T) {
 	ctx := context.Background()
 	v := record("c-"+uuid.NewString(), "ref-1")
 
-	if err := r.Save(ctx, v); err != nil {
+	if err := r.Save(ctx, v, testEvent); err != nil {
 		t.Fatal(err)
 	}
 	got, err := r.GetByReference(ctx, v.ClientID, "ref-1")
@@ -62,15 +64,34 @@ func TestPostgresDuplicateReference(t *testing.T) {
 	ctx := context.Background()
 	client := "c-" + uuid.NewString()
 
-	r.Save(ctx, record(client, "same"))
-	if err := r.Save(ctx, record(client, "same")); !errors.Is(err, domain.ErrDuplicateReference) {
+	r.Save(ctx, record(client, "same"), testEvent)
+	if err := r.Save(ctx, record(client, "same"), testEvent); !errors.Is(err, domain.ErrDuplicateReference) {
 		t.Errorf("err = %v, want ErrDuplicateReference", err)
 	}
 	// No reference ID: many records allowed.
-	if err := r.Save(ctx, record(client, "")); err != nil {
+	if err := r.Save(ctx, record(client, ""), testEvent); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.Save(ctx, record(client, "")); err != nil {
+	if err := r.Save(ctx, record(client, ""), testEvent); err != nil {
 		t.Errorf("records without a reference must not collide: %v", err)
+	}
+}
+
+func TestPostgresDuplicateWritesNoOutboxRow(t *testing.T) {
+	r := newTestPostgres(t)
+	ctx := context.Background()
+	client := "c-" + uuid.NewString()
+
+	count := func() int {
+		var n int
+		r.pool.QueryRow(ctx, `SELECT count(*) FROM outbox WHERE key = $1`, client).Scan(&n)
+		return n
+	}
+	ev := domain.OutboxMessage{Topic: "verification.completed", Key: client, Payload: []byte(`{}`)}
+
+	r.Save(ctx, record(client, "dup"), ev)
+	r.Save(ctx, record(client, "dup"), ev) // rejected: duplicate reference
+	if n := count(); n != 1 {
+		t.Errorf("outbox rows = %d, want 1: the rolled-back save must not leave an event", n)
 	}
 }

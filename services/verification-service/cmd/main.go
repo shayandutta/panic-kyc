@@ -12,7 +12,6 @@ import (
 	"kyc-platform/services/verification-service/internal/cache"
 	"kyc-platform/services/verification-service/internal/grpcapi"
 	"kyc-platform/services/verification-service/internal/orchestrator"
-	"kyc-platform/services/verification-service/internal/publisher"
 	"kyc-platform/services/verification-service/internal/repository"
 	"kyc-platform/services/verification-service/internal/service"
 	"kyc-platform/services/verification-service/internal/source"
@@ -78,7 +77,7 @@ func main() {
 	defer producer.Close()
 
 	// Wire everything together: this is our dependency injection.
-	svc := service.New(repo, cache.NewRedisCache(redisClient, cacheTTL), orch, publisher.NewKafkaPublisher(producer), piiSecret)
+	svc := service.New(repo, cache.NewRedisCache(redisClient, cacheTTL), orch, piiSecret)
 
 	lis, err := net.Listen("tcp", grpcAddr)
 	if err != nil {

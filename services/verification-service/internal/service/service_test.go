@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
 	"kyc-platform/services/verification-service/internal/domain"
 	"kyc-platform/services/verification-service/internal/orchestrator"
 	"kyc-platform/services/verification-service/internal/repository"
+	"kyc-platform/shared/contracts"
 )
 
 type fakeLookup struct {
@@ -46,26 +48,14 @@ func (c *mapCache) Set(ctx context.Context, key string, v domain.CachedLookup) e
 	return nil
 }
 
-type fakePublisher struct {
-	mu        sync.Mutex
-	published []*domain.Verification
-}
-
-func (p *fakePublisher) PublishVerificationCompleted(ctx context.Context, v *domain.Verification) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.published = append(p.published, v)
-	return nil
-}
-
 func newTestService(l *fakeLookup) *Service {
-	s, _ := newTestServiceWithEvents(l)
+	s, _ := newTestServiceWithRepo(l)
 	return s
 }
 
-func newTestServiceWithEvents(l *fakeLookup) (*Service, *fakePublisher) {
-	pub := &fakePublisher{}
-	return New(repository.NewInmemRepository(), newMapCache(), l, pub, "test-secret"), pub
+func newTestServiceWithRepo(l *fakeLookup) (*Service, *repository.InmemRepository) {
+	repo := repository.NewInmemRepository()
+	return New(repo, newMapCache(), l, "test-secret"), repo
 }
 
 var ctx = context.Background()
@@ -128,17 +118,22 @@ func TestClientsCannotReadEachOthersRecords(t *testing.T) {
 	}
 }
 
-func TestPublishesOnceEvenWhenClientRetries(t *testing.T) {
+func TestOneOutboxEventEvenWhenClientRetries(t *testing.T) {
 	l := &fakeLookup{res: orchestrator.Result{Exists: true, Source: "source-a"}}
-	s, pub := newTestServiceWithEvents(l)
+	s, repo := newTestServiceWithRepo(l)
 	req := VerifyRequest{ClientID: "c1", PAN: "ABCDE1234F", ReferenceID: "ref-1"}
 
 	s.VerifyPAN(ctx, req)
 	s.VerifyPAN(ctx, req)
-	if len(pub.published) != 1 {
-		t.Errorf("published %d events, want 1: a retry must not trigger a second webhook", len(pub.published))
+
+	events := repo.Outbox()
+	if len(events) != 1 {
+		t.Fatalf("outbox has %d events, want 1: a retry must not trigger a second webhook", len(events))
 	}
-	if pub.published[0].PANMasked != "AB******4F" {
+	if events[0].Topic != contracts.TopicVerificationCompleted || events[0].Key != "c1" {
+		t.Errorf("unexpected event %+v", events[0])
+	}
+	if strings.Contains(string(events[0].Payload), "ABCDE1234F") || !strings.Contains(string(events[0].Payload), "AB******4F") {
 		t.Error("event must carry only the masked PAN")
 	}
 }

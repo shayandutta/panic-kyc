@@ -11,13 +11,14 @@ import (
 type InmemRepository struct {
 	mu      sync.RWMutex
 	records map[string]*domain.Verification
+	outbox  []domain.OutboxMessage
 }
 
 func NewInmemRepository() *InmemRepository {
 	return &InmemRepository{records: make(map[string]*domain.Verification)}
 }
 
-func (r *InmemRepository) Save(ctx context.Context, v *domain.Verification) error {
+func (r *InmemRepository) Save(ctx context.Context, v *domain.Verification, event domain.OutboxMessage) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -30,7 +31,15 @@ func (r *InmemRepository) Save(ctx context.Context, v *domain.Verification) erro
 	}
 	copied := *v
 	r.records[v.ID] = &copied
+	r.outbox = append(r.outbox, event)
 	return nil
+}
+
+// Outbox returns the events saved so far, for tests.
+func (r *InmemRepository) Outbox() []domain.OutboxMessage {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]domain.OutboxMessage(nil), r.outbox...)
 }
 
 func (r *InmemRepository) GetByID(ctx context.Context, clientID, id string) (*domain.Verification, error) {

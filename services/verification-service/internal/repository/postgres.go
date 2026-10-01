@@ -50,9 +50,26 @@ func (r *PostgresRepository) Migrate(ctx context.Context) error {
 	return nil
 }
 
-func (r *PostgresRepository) Save(ctx context.Context, v *domain.Verification) error {
-	_, err := r.pool.Exec(ctx, insertVerification, verificationArgs(v)...)
-	return translate(err)
+// Save writes the record and its event in one transaction. This is the
+// heart of the outbox pattern: we never have a record without its event,
+// or an event for a record that was rolled back.
+func (r *PostgresRepository) Save(ctx context.Context, v *domain.Verification, event domain.OutboxMessage) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) // no-op after a successful Commit
+
+	if _, err := tx.Exec(ctx, insertVerification, verificationArgs(v)...); err != nil {
+		return translate(err)
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO outbox (topic, key, payload) VALUES ($1, $2, $3)`,
+		event.Topic, event.Key, event.Payload,
+	); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *PostgresRepository) GetByID(ctx context.Context, clientID, id string) (*domain.Verification, error) {

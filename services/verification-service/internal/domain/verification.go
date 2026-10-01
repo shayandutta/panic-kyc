@@ -36,10 +36,18 @@ type Verification struct {
 	CreatedAt      time.Time `bson:"created_at"`
 }
 
+// OutboxMessage is an event to publish later, saved alongside the record.
+type OutboxMessage struct {
+	Topic   string
+	Key     string
+	Payload []byte
+}
+
 // Repository stores verification records. Every read is scoped to a client
 // so one client can never see another client's data.
 type Repository interface {
-	Save(ctx context.Context, v *Verification) error
+	// Save stores the record and its outbox event atomically: both or neither.
+	Save(ctx context.Context, v *Verification, event OutboxMessage) error
 	GetByID(ctx context.Context, clientID, id string) (*Verification, error)
 	GetByReference(ctx context.Context, clientID, referenceID string) (*Verification, error)
 }
