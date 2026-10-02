@@ -28,10 +28,27 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
 
+// migrationLockID is an arbitrary constant shared by every replica.
+const migrationLockID = 7_042_026
+
 // Migrate applies the SQL files in order. They use IF NOT EXISTS, so running
-// them on every start is safe. A larger project would use a migration tool
-// that records which versions have run.
+// them on every start is safe, but NOT concurrently: two replicas running
+// CREATE TABLE IF NOT EXISTS at the same instant can both try to create the
+// table and one fails. So replicas take turns using a PostgreSQL advisory lock.
+// A larger project would use a migration tool that records applied versions.
 func (r *PostgresRepository) Migrate(ctx context.Context) error {
+	conn, err := r.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+
+	// Session-level lock: held by this connection until unlocked.
+	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationLockID); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer conn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationLockID)
+
 	entries, err := migrations.ReadDir("migrations")
 	if err != nil {
 		return err
@@ -43,16 +60,13 @@ func (r *PostgresRepository) Migrate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if _, err := r.pool.Exec(ctx, string(sql)); err != nil {
+		if _, err := conn.Exec(ctx, string(sql)); err != nil {
 			return fmt.Errorf("migration %s: %w", e.Name(), err)
 		}
 	}
 	return nil
 }
 
-// Save writes the record and its event in one transaction. This is the
-// heart of the outbox pattern: we never have a record without its event,
-// or an event for a record that was rolled back.
 func (r *PostgresRepository) Save(ctx context.Context, v *domain.Verification, event domain.OutboxMessage) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

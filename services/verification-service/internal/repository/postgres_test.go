@@ -95,3 +95,37 @@ func TestPostgresDuplicateWritesNoOutboxRow(t *testing.T) {
 		t.Errorf("outbox rows = %d, want 1: the rolled-back save must not leave an event", n)
 	}
 }
+
+// Simulates several replicas starting at once against an empty database:
+// separate connection pools (like separate pods), released together.
+func TestConcurrentMigrationsDoNotFail(t *testing.T) {
+	url := os.Getenv("TEST_POSTGRES_URL")
+	if url == "" {
+		t.Skip("TEST_POSTGRES_URL not set")
+	}
+	const replicas = 10
+	repos := make([]*PostgresRepository, replicas)
+	for i := range repos {
+		pool, err := db.ConnectPostgres(context.Background(), url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(pool.Close)
+		repos[i] = NewPostgresRepository(pool)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, replicas)
+	for _, r := range repos {
+		go func() {
+			<-start
+			errs <- r.Migrate(context.Background())
+		}()
+	}
+	close(start)
+	for i := 0; i < replicas; i++ {
+		if err := <-errs; err != nil {
+			t.Errorf("concurrent migrate failed: %v", err)
+		}
+	}
+}
