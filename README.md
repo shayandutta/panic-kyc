@@ -151,3 +151,7 @@ deploy/                   demo config, docker webhook config, kubernetes manifes
 - Field-level envelope encryption with a KMS, mTLS between services, and OpenTelemetry tracing are not implemented yet.
 - The Kubernetes manifests are structurally validated but haven't been applied to a cluster in this repo.
 - Hedged requests across providers would further cut tail latency.
+
+## License
+
+[MIT](LICENSE) © 2026 Shayan Dutta. Free to use and adapt; keep the copyright notice.
