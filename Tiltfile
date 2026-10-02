@@ -10,7 +10,14 @@ services = {
 }
 
 for name, path in services.items():
-    docker_build('kyc/' + name, '.', build_args={'SERVICE_PATH': path})
+    # Only files this service is built from trigger its rebuild, so editing
+    # the webhook service doesn't rebuild the other four.
+    service_dir = '/'.join(path.split('/')[:2])
+    docker_build(
+        'kyc/' + name, '.',
+        build_args={'SERVICE_PATH': path},
+        only=['go.mod', 'go.sum', 'shared', 'deploy', service_dir],
+    )
 
 k8s_yaml(listdir('deploy/k8s'))
 
