@@ -1,6 +1,8 @@
-# KYC Platform
+# PANic
 
-A small identity verification platform in Go, modelled on how KYC API
+**Don't panic. Your PAN is verified.**
+
+A small identity verification (KYC) platform in Go, modelled on how KYC API
 companies work: clients call a REST API to verify a PAN, singly or in bulk;
 the platform checks unreliable upstream data providers with fallback, keeps
 an audit trail without storing raw PII, and notifies clients by signed webhook.
